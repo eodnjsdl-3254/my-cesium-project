@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>V-World 3D Independent</title>
+    <style>
+        body, html { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: black; }
+        #vworld-container { width: 100%; height: 100%; }
+    </style>
+
+    <script>
+        (function() {
+            const originalRemove = EventTarget.prototype.removeEventListener;
+            EventTarget.prototype.removeEventListener = function(type, listener, options) {
+                if (arguments.length < 2) return; 
+                return originalRemove.call(this, type, listener, options);
+            };
+        })();
+    </script>
+
+    <script type="text/javascript" src="https://map.vworld.kr/js/webglMapInit.js.do?version=2.0&apiKey=37B44C3A-8C01-30CE-806E-7D89E87B8473&domain=http://localhost:5173"></script>
+</head>
+<body>
+    <div id="vworld-container"></div>
+
+    <script>
+        function init() {
+            // V-World 객체가 로드될 때까지 대기
+            if (!window.vw) {
+                setTimeout(init, 100);
+                return;
+            }
+
+            console.log("🚀 [Iframe] V-World 맵 초기화 시작");
+
+            var mapOptions = {
+                basemapType: window.vw.BasemapType.GRAPHIC,
+                controlDensity: window.vw.DensityType.BASIC,
+                interactionDensity: window.vw.DensityType.BASIC,
+                controlsAutoArrange: true,
+                homePosition: window.vw.CameraPosition,
+                initPosition: new window.vw.CameraPosition(
+                    new window.vw.CoordZ(126.8320, 37.6585, 800), // 고양시청
+                    new window.vw.Direction(-45, 0, 0)
+                )
+            };
+
+            try {
+                // 여기서 생성하면 React 경로 문제(Worker 오류)가 발생하지 않습니다.
+                var vmap = new window.vw.Map("vworld-container", mapOptions);
+                console.log("✅ [Iframe] V-World 지도 생성 성공");
+            } catch (e) {
+                console.error("❌ [Iframe] 생성 실패:", e);
+            }
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -11,12 +11,32 @@ export class DataManager {
       id: id,
       name: name,
       position: Cesium.Cartesian3.fromDegrees(lon, lat),
-      point: { pixelSize: 10, color: Cesium.Color.YELLOW, outlineWidth: 2 },
-      label: { text: name, font: '14pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
-    });
-  }
+      // 이미지가 깨져도 마커가 보이도록 '점(Point)'을 추가합니다.
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.YELLOW,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+      },
+      // 이미지를 쓰고 싶다면 경로를 아래와 같이 수정하세요.
+      billboard: {
+        image: Cesium.buildModuleUrl('Assets/Textures/pin.png'), // 내부 자산 경로 사용
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY 
+      },
+      label: {
+        text: name,
+        font: '14px sans-serif',
+        fillColor: Cesium.Color.WHITE,
+        pixelOffset: new Cesium.Cartesian2(0, -20),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+      }
+  });
+}
 
-  // 🚩 V월드 3D 건물(3D Tiles) 추가 함수
+  // V월드 3D 건물(3D Tiles) 추가 함수
   async addVworld3DBuildings() {
     try {
       // V월드 3D Tileset URL (인증키가 포함된 URL 구조)

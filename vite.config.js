@@ -17,6 +17,19 @@ export default defineConfig({
           'Origin': 'http://localhost:5173'
         }
       },
+      '/vworld-data': {
+        target: 'https://xdworld.vworld.kr', // 3D 데이터 서버
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/vworld-data/, ''),
+        secure: false,
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            proxyReq.setHeader('Referer', 'https://map.vworld.kr/');
+            proxyReq.setHeader('Origin', 'https://map.vworld.kr');
+            proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          });
+        }
+      },
       '/osm-tiles': {
         target: 'https://a.tile.openstreetmap.org',
         changeOrigin: true,

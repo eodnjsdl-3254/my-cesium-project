@@ -1,17 +1,17 @@
 import { useState, useCallback } from "react"
-import { Map3D } from "../cesium/facade/map"
+import { Map3D } from "../cesium/map/map"
 
 export const useDTMap = () => {
   const [map, setMap] = useState(null);
 
-  const initMap = useCallback((viewer, onMapClick) => {
+  const initMap = useCallback((viewer, onMapClick, onBuildingClick) => {
     // 1. 함수 호출 자체를 확인
     console.log("🚩 [Hook] initMap 호출됨"); 
 
     if (viewer && !map) {
       try {
         console.log("🚩 [Hook] Map3D 인스턴스 생성 시도");
-        const instance = new Map3D(viewer, onMapClick);
+        const instance = new Map3D(viewer, onMapClick, onBuildingClick);
         
         console.log("🚩 [Hook] 인스턴스 생성 성공:", instance);
         setMap(instance);
