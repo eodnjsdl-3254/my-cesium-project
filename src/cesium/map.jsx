@@ -1,4 +1,3 @@
-// src/cesium/MapController.jsx
 import { useEffect } from "react";
 import { useCesium } from "resium";
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import SimulationPanel from './SimulationPanel';
 
 export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, onOpenVWorld }) => {
   
@@ -10,6 +11,22 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
   const [buildingStyle, setBuildingStyle] = useState("DEFAULT");  
   const [isTracking, setIsTracking] = useState(false);
   const [isMarkerMode, setIsMarkerMode] = useState(false);
+  const [showSimulation, setShowSimulation] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+
+  const handleSimulationSelect = (buildingProps) => {
+    setEditTarget(buildingProps); // 선택된 건물 정보 저장
+    setShowSimulation(true);      // 패널 열기
+  };
+
+  if (map && !map.onSimulationSelect) {
+     map.onSimulationSelect = handleSimulationSelect;
+  }
+
+  const handleClosePanel = () => {
+    setShowSimulation(false);
+    setEditTarget(null); // 편집 대상 초기화
+  };
 
   // 핸들러: 건물 모드 변경
   const handleBuildingChange = (mode) => {
@@ -151,6 +168,26 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
         <div style={coordBarStyle}>
           📍 경도 {clickedCoord.lon.toFixed(6)} / 위도 {clickedCoord.lat.toFixed(6)}
         </div>
+      )}
+      
+      {/* 시뮬레이션 버튼 추가 (우측 상단 쯤 배치) */}
+      <div style={{ position: "absolute", top: 20, right: 20, zIndex: 1000 }}>
+        <button 
+          onClick={() => setShowSimulation(!showSimulation)}
+          style={{ padding: "10px 20px", background: "#673AB7", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", boxShadow: "0 2px 5px rgba(0,0,0,0.3)" }}
+        >
+          🛠️ 편집 시뮬레이션
+        </button>
+      </div>
+
+      {/* 시뮬레이션 패널 (조건부 렌더링) */}
+      {showSimulation && (
+        <SimulationPanel 
+           map={map} 
+           selectedBuilding={editTarget} // 선택된 건물 정보 전달
+           onClose={handleClosePanel} 
+           onUpdate={() => setEditTarget(null)} // 수정 완료 시 편집 모드 해제
+        />
       )}
     </>
   );
