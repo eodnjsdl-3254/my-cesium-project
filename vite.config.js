@@ -5,6 +5,11 @@ import cesium from 'vite-plugin-cesium'
 export default defineConfig({
   plugins: [react(), cesium()],
   server: {
+    host: '0.0.0.0', // 모든 IP에서의 접근 허용 (필수!)
+    port: 5173,      // 포트 고정
+    hmr: {
+        clientPort: 80 // Nginx(80)를 거쳐서 오므로 HMR(새로고침) 포트도 맞춰줌
+    },
     proxy: {
       '/vworld-bin': {
         target: 'https://api.vworld.kr',
