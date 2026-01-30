@@ -1,22 +1,38 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react' // [수정] useEffect 추가 필수
 import SimulationPanel from './SimulationPanel';
+import GreenerySimulationPanel from './GreenerySimulationPanel';
 
-export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, onOpenVWorld }) => {
+export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, onOpenVWorld, greeneryProps }) => {
   
-  // 상태 관리
+  // 1. 상태 관리
   const [baseMapType, setBaseMapType] = useState("OSM");
   const [showVworld, setShowVworld] = useState(false);
   const [vworldType, setVworldType] = useState("Base");
-  const [buildingMode, setBuildingMode] = useState("NONE"); // 건물 모드 ("NONE", "OSM", "VWORLD")
+  const [buildingMode, setBuildingMode] = useState("NONE");
   const [buildingStyle, setBuildingStyle] = useState("DEFAULT");  
   const [isTracking, setIsTracking] = useState(false);
   const [isMarkerMode, setIsMarkerMode] = useState(false);
   const [showSimulation, setShowSimulation] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
 
+  // 2. 녹지 시뮬레이션 상태
+  const [showGreeneryPanel, setShowGreeneryPanel] = useState(false);
+  const [treeCount, setTreeCount] = useState(100);
+
+  // [기능 보완] 그리기 모드일 때 커서 모양 변경 (십자선)
+  useEffect(() => {
+    if (greeneryProps && greeneryProps.isDrawing) {
+      document.body.style.cursor = 'crosshair';
+    } else {
+      document.body.style.cursor = 'default';
+    }
+  }, [greeneryProps?.isDrawing]);
+
+  // 3. 핸들러들
   const handleSimulationSelect = (buildingProps) => {
-    setEditTarget(buildingProps); // 선택된 건물 정보 저장
-    setShowSimulation(true);      // 패널 열기
+    if (showGreeneryPanel) return; // 녹지 모드 중에는 건물 선택 차단
+    setEditTarget(buildingProps);
+    setShowSimulation(true);
   };
 
   if (map && !map.onSimulationSelect) {
@@ -25,28 +41,23 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
 
   const handleClosePanel = () => {
     setShowSimulation(false);
-    setEditTarget(null); // 편집 대상 초기화
+    setEditTarget(null);
   };
 
-  // 핸들러: 건물 모드 변경
   const handleBuildingChange = (mode) => {
-    // V-World 버튼을 누르면 -> 세슘 모드를 끄고 -> V-World 전용화면으로 전환
     if (mode === "VWORLD") {
-      if (onOpenVWorld) onOpenVWorld(); // App.jsx의 상태 변경
+      if (onOpenVWorld) onOpenVWorld();
       return;
     }
-
     setBuildingMode(mode);
     map?.setBuildingMode(mode);
   };
 
-  // 핸들러: 베이스맵
   const handleBaseMapChange = (e) => {
     setBaseMapType(e.target.value);
     map?.changeBaseMap(e.target.value);
   };
 
-  // 핸들러: V-World 2D
   const handleVworldTypeChange = (e) => {
     setVworldType(e.target.value);
     if (showVworld) map?.toggleVworldImagery(true, e.target.value);
@@ -57,18 +68,17 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
       {/* 상단 컨트롤 바 */}
       <div style={{ position: "absolute", zIndex: 10, top: 10, left: 10, display: "flex", gap: "5px", flexWrap: "wrap", alignItems: "center" }}>
         
-        {/* 1. 베이스맵 */}
+        {/* 베이스맵 선택 */}
         <select value={baseMapType} onChange={handleBaseMapChange} style={selectStyle}>
           <option value="OSM">🗺️ 일반 지도 (OSM)</option>
           <option value="SATELLITE">🛰️ 위성 지도 (Cesium)</option>
           <option value="NONE">🌑 배경 없음</option>
         </select>
 
-        {/* 2. 이동 버튼 */}
         <button onClick={() => map?.camera.viewHome()} style={btnStyle}>홈</button>
         <button onClick={() => map?.focusLocation(37.6585, 126.8320, "고양시청")} style={btnStyle}>고양 이동</button>
 
-        {/* 3. V-World 2D 레이어 */}
+        {/* V-World 레이어 */}
         <div style={groupStyle}>
           <select value={vworldType} onChange={handleVworldTypeChange} style={innerSelectStyle}>
             <option value="Base">VWorld-일반</option>
@@ -85,32 +95,16 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
           </button>
         </div>
 
-        {/* 4. 건물 제어 */}
+        {/* 건물 제어 */}
         <div style={groupStyle}>
           <span style={{ fontSize: "12px", padding: "0 5px", color: "#666", fontWeight: "bold" }}>🏢 건물:</span>
-          
-          <button onClick={() => handleBuildingChange("NONE")}
-            style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "NONE" ? "#555" : "#ccc" }}>
-            OFF
-          </button>
-
-          <button onClick={() => handleBuildingChange("OSM")}
-            style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "OSM" ? "#9C27B0" : "#ccc" }}>
-            분석(OSM)
-          </button>
-          
-          <button onClick={() => handleBuildingChange("VWORLD")}
-            style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "VWORLD" ? "#4285F4" : "#ccc" }}>
-            실사(V-World)
-          </button>
-
-          <button onClick={() => handleBuildingChange("GOOGLE")}
-            style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "GOOGLE" ? "#EA4335" : "#ccc" }}>
-            구글(해외)
-          </button>
+          <button onClick={() => handleBuildingChange("NONE")} style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "NONE" ? "#555" : "#ccc" }}>OFF</button>
+          <button onClick={() => handleBuildingChange("OSM")} style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "OSM" ? "#9C27B0" : "#ccc" }}>분석(OSM)</button>
+          <button onClick={() => handleBuildingChange("VWORLD")} style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "VWORLD" ? "#4285F4" : "#ccc" }}>실사(V-World)</button>
+          <button onClick={() => handleBuildingChange("GOOGLE")} style={{ ...toggleBtnStyle, backgroundColor: buildingMode === "GOOGLE" ? "#EA4335" : "#ccc" }}>구글(해외)</button>
         </div>
 
-        {/* OSM 분석 도구 */}
+        {/* OSM 높이 스타일 */}
         {buildingMode === "OSM" && (
            <button onClick={() => { 
                const nextStyle = buildingStyle === "DEFAULT" ? "HEIGHT" : "DEFAULT"; 
@@ -122,21 +116,17 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
            </button>
         )}
 
-        {/* 5. 마커 모드 */}
+        {/* 마커 모드 */}
         <button onClick={() => {
             const next = !isMarkerMode;
             setIsMarkerMode(next);
             map?.setMarkerMode(next);
           }}
-          style={{ 
-            ...btnStyle, 
-            backgroundColor: isMarkerMode ? "#FFEB3B" : "white", 
-            border: isMarkerMode ? "2px solid #FBC02D" : "none" 
-          }}>
+          style={{ ...btnStyle, backgroundColor: isMarkerMode ? "#FFEB3B" : "white", border: isMarkerMode ? "2px solid #FBC02D" : "none" }}>
           {isMarkerMode ? "📍 마커: ON" : "📍 마커: OFF"}
         </button>
 
-        {/* 6. 추적 모드 */}
+        {/* 추적 모드 */}
         <button onClick={() => {
             const next = !isTracking;
             setIsTracking(next);
@@ -146,10 +136,42 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
           {isTracking ? "📡 추적 중" : "📡 추적 모드"}
         </button>
 
+        {/* 녹지 모드 토글 버튼 */}
+        <button 
+          onClick={() => {
+            const next = !showGreeneryPanel;
+            setShowGreeneryPanel(next);
+            
+            // App.jsx로 상태 전파
+            if (greeneryProps && typeof greeneryProps.setIsActive === "function") {
+              greeneryProps.setIsActive(next);
+            }
+
+            if (next) {
+              // 켤 때: 다른 패널 닫기
+              setSelectedBuilding(null);
+              setShowSimulation(false);
+            } else {
+              // [보완] 끌 때: 그리기 상태 초기화 (안전장치)
+              if (greeneryProps && typeof greeneryProps.reset === "function") {
+                greeneryProps.reset();
+              }
+            }
+          }}
+          style={{ 
+            ...btnStyle, 
+            backgroundColor: showGreeneryPanel ? "#2ecc71" : "white", 
+            color: showGreeneryPanel ? "white" : "black",
+            border: showGreeneryPanel ? "2px solid #145a32" : "none"
+          }}
+        >
+          🌿 녹지 시뮬레이션: {showGreeneryPanel ? "ON" : "OFF"}
+        </button>
+
         <button onClick={() => map?.data.clearAll()} style={btnStyle}>데이터 삭제</button>
       </div>
 
-      {/* 정보창 (Props 사용) */}
+      {/* 정보창 */}
       {selectedBuilding && (
         <div style={infoCardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -165,35 +187,60 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
 
       {/* 좌표 바 */}
       {clickedCoord && (
-        <div style={coordBarStyle}>
-          📍 경도 {clickedCoord.lon.toFixed(6)} / 위도 {clickedCoord.lat.toFixed(6)}
-        </div>
+        <div style={coordBarStyle}>📍 경도 {clickedCoord.lon.toFixed(6)} / 위도 {clickedCoord.lat.toFixed(6)}</div>
       )}
       
-      {/* 시뮬레이션 버튼 추가 (우측 상단 쯤 배치) */}
-      <div style={{ position: "absolute", top: 20, right: 20, zIndex: 1000 }}>
-        <button 
-          onClick={() => setShowSimulation(!showSimulation)}
-          style={{ padding: "10px 20px", background: "#673AB7", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", boxShadow: "0 2px 5px rgba(0,0,0,0.3)" }}
-        >
-          🛠️ 편집 시뮬레이션
-        </button>
-      </div>
+      {/* 편집 시뮬레이션 버튼 (녹지 모드 아닐 때만 노출) */}
+      {!showGreeneryPanel && (
+        <div style={{ position: "absolute", top: 20, right: 20, zIndex: 1000 }}>
+          <button 
+            onClick={() => setShowSimulation(!showSimulation)}
+            style={{ padding: "10px 20px", background: "#673AB7", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", boxShadow: "0 2px 5px rgba(0,0,0,0.3)" }}
+          >
+            🛠️ 편집 시뮬레이션
+          </button>
+        </div>
+      )}
 
-      {/* 시뮬레이션 패널 (조건부 렌더링) */}
+      {/* 건물 편집 패널 */}
       {showSimulation && (
         <SimulationPanel 
-           map={map} 
-           selectedBuilding={editTarget} // 선택된 건물 정보 전달
-           onClose={handleClosePanel} 
-           onUpdate={() => setEditTarget(null)} // 수정 완료 시 편집 모드 해제
+            map={map} 
+            selectedBuilding={editTarget} 
+            onClose={handleClosePanel} 
+            onUpdate={() => setEditTarget(null)} 
         />
+      )}
+      
+      {/* 녹지 시뮬레이션 패널 */}
+      {showGreeneryPanel && (
+        <GreenerySimulationPanel 
+            isDrawing={greeneryProps.isDrawing}
+            onStartDraw={greeneryProps.startDrawing}
+            onPlant={greeneryProps.plantTrees} 
+            treeCount={treeCount} 
+            setTreeCount={setTreeCount} 
+            onReset={greeneryProps.reset} 
+            // 탄소 흡수량 데이터 전달 (예시: 나무당 8.2kg)
+            carbonAbsorption={(treeCount * 8.2).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+        />
+      )}
+
+      {/* 그리기 모드 안내 배너 */}
+      {showGreeneryPanel && greeneryProps.isDrawing && (
+        <div style={{
+          position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(52, 152, 219, 0.9)', color: 'white', padding: '8px 25px',
+          borderRadius: '20px', zIndex: 1000, fontWeight: 'bold', boxShadow: "0 4px 10px rgba(0,0,0,0.3)"
+        }}>
+          🎯 지도 위를 클릭하여 영역을 그리세요 (더블 클릭으로 완료)
+        </div>
       )}
     </>
   );
 };
 
-// 스타일 (동일)
+// 스타일 상수
 const btnStyle = { padding: "8px 12px", borderRadius: "4px", border: "none", cursor: "pointer", background: "white", fontWeight: "bold", boxShadow: "0 2px 4px rgba(0,0,0,0.2)", fontSize: "12px" };
 const selectStyle = { padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontWeight: "bold", cursor: "pointer", fontSize: "12px" };
 const groupStyle = { display: "flex", gap: "2px", border: "1px solid #ddd", padding: "2px", borderRadius: "4px", background: "rgba(255,255,255,0.8)", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", alignItems: "center" };
