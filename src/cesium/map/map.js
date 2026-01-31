@@ -2,6 +2,7 @@ import * as Cesium from "cesium";
 import { CameraManager } from "../managers/camera";
 import { DataManager } from "../managers/data";
 import { VWorldManager } from "../managers/vworld";
+import { GreeneryManager } from "../managers/greenery";
 
 export class Map3D {
   constructor(viewer, onMapClick, onBuildingClick, onSimulationSelect) {
@@ -47,11 +48,25 @@ export class Map3D {
     this.vworldBuildings = null;
     this.googleBuildings = null;
 
+    // 녹지 모드 상태 플래그
+    this.greenery = new GreeneryManager(viewer);
+    this.isGreeneryMode = false;
+
     // 초기 실행
     this.changeBaseMap("OSM");
     this.setupEventListeners();
 
     console.log("🏗️ [Map3D] 모든 기능 초기화 완료");
+  }
+
+  // 외부(UI)에서 녹지 모드를 켜고 끌 수 있는 메서드
+  setGreeneryMode(enabled) {
+    this.isGreeneryMode = enabled;
+    // 녹지 모드가 켜지면 기존 선택된 건물 하이라이트 끄기
+    if (enabled) {
+      this.highlightBuilding(null);
+      this.viewer.selectedEntity = undefined;
+    }
   }
 
   // 지형 설정
@@ -472,6 +487,10 @@ export class Map3D {
     this.handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas);
 
     this.handler.setInputAction((click) => {
+      if (this.isGreeneryMode) {
+        return; 
+      }
+
       let cartesian = this.viewer.scene.pickPosition(click.position);
       if (!Cesium.defined(cartesian)) {
         cartesian = this.viewer.camera.pickEllipsoid(click.position);
@@ -611,5 +630,29 @@ export class Map3D {
         }
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  }
+
+  // ---------------------------------------------------------------
+  // 🌿 [추가] 녹지 시뮬레이션 인터페이스 (Manager 연결)
+  // ---------------------------------------------------------------
+  
+  // 1. 녹지 모드 시작 (그리기 모드 진입)
+  startGreenerySimulation(onDrawFinishCallback) {
+    this.setGreeneryMode(true);
+    // 매니저에게 그리기 권한 위임
+    this.greenery.startDrawing(onDrawFinishCallback);
+    console.log("🌿 녹지 시뮬레이션 시작");
+  }
+
+  // 2. 나무 심기 명령
+  plantTrees(count) {
+    this.greenery.plantTrees(count);
+  }
+
+  // 3. 녹지 모드 종료 (초기화)
+  stopGreenerySimulation() {
+    this.setGreeneryMode(false);
+    this.greenery.reset();
+    console.log("🌿 녹지 시뮬레이션 종료");
   }
 }

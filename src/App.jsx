@@ -4,7 +4,6 @@ import { useDTMap } from "./hooks/dtmap";
 import { useGreeneryDraw } from "./hooks/useGreeneryDraw";
 import { UI } from "./components/ui/ui";
 import MapController from "./cesium/map";
-import Carbon from "./cesium/Carbon";
 import VWorld from "./cesium/vworld";
 
 function App() {
@@ -68,10 +67,6 @@ function App() {
           
           <Viewer full selectionIndicator={false} infoBox={false}>
             <MapController initMap={handleInit} />
-            <Carbon 
-              isActive={isGreeneryActive} // 여기서는 State 사용 (렌더링용)
-              drawProps={greeneryDraw} 
-            />
           </Viewer>
         </>
       )}
