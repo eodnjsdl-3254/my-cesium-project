@@ -2,7 +2,9 @@ import os
 import shutil
 import subprocess
 import uuid
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 
@@ -21,6 +23,9 @@ app.add_middleware(
 UPLOAD_DIR = "/app/files"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# -------------------------------------------------------------
+# [1] 3D 변환 API
+# -------------------------------------------------------------
 @app.post("/convert")
 async def convert_3ds_to_glb(files: List[UploadFile] = File(...)):
     # 1. 작업 ID 생성 및 폴더 생성
@@ -52,7 +57,7 @@ async def convert_3ds_to_glb(files: List[UploadFile] = File(...)):
     print(f"🚀 [Start] Converting {input_3ds} -> {output_glb}")
     
     try:
-        # 3. Blender 실행 (스크립트 파일명: blender.py 확인)
+        # 3. Blender 실행
         result = subprocess.run([
             blender_exe,
             "-b", 
@@ -62,19 +67,15 @@ async def convert_3ds_to_glb(files: List[UploadFile] = File(...)):
             output_glb
         ], capture_output=True, text=True, check=True)
         
-        # 성공 로그
         print("✅ Blender Success!")
         print(result.stdout)
 
     except subprocess.CalledProcessError as e:
-        # 실패 로그를 더 자세히 출력
         print("❌ Blender Failed!")
-        print("--- Blender STDOUT (에러 원인 확인용) ---")
+        print("--- Blender STDOUT ---")
         print(e.stdout) 
         print("--- Blender STDERR ---")
         print(e.stderr)
-        
-        # 프론트엔드에 에러 내용 전달
         return {"error": "Blender conversion failed", "details": f"Stdout: {e.stdout} / Stderr: {e.stderr}"}
         
     except Exception as e:
@@ -93,3 +94,39 @@ async def convert_3ds_to_glb(files: List[UploadFile] = File(...)):
         "url": download_url,
         "filename": os.path.basename(output_glb)
     }
+
+# -------------------------------------------------------------
+# [2] 라이브러리 목록 조회 API (들여쓰기 수정 완료)
+# -------------------------------------------------------------
+@app.get("/models")
+async def get_models():
+    """DB 라이브러리 목록 반환"""
+    print("📢 [API] /models 요청 처리 시작")
+    try:
+        # docker-compose의 서비스명 'db'로 접속
+        conn = psycopg2.connect(
+            host="db",
+            database="gisdb",
+            user="docker",
+            password="docker"
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # 데이터 조회
+        cur.execute("""
+            SELECT mlid, model_org_file_name, model_save_file_url, thumb_save_url 
+            FROM cbn.tbd_simlatn_model_info 
+            ORDER BY mlid ASC
+        """)
+        rows = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        print(f"✅ DB 조회 성공: {len(rows)}건")
+        return rows
+
+    except Exception as e:
+        print(f"❌ DB Error: {str(e)}")
+        # 에러 발생 시 빈 리스트 반환하여 프론트엔드 크래시 방지
+        return []

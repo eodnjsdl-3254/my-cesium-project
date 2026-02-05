@@ -30,7 +30,7 @@ RUN wget https://download.blender.org/release/Blender3.6/blender-3.6.7-linux-x64
 ENV PATH="/usr/local/blender:$PATH"
 
 # 5. 파이썬 라이브러리 설치
-RUN pip install fastapi uvicorn python-multipart
+RUN pip install fastapi uvicorn python-multipart psycopg2-binary
 
 # 6. 소스 코드 복사
 COPY main.py .

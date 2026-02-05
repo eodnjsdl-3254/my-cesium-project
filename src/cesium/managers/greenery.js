@@ -240,7 +240,7 @@ export class GreeneryManager {
         
         const rawSine = Math.sin(height / CYCLE_HEIGHT);
         
-        // 🌟 [핵심] Texture 1과 반대지만, 범위가 좁음
+        // Texture 1과 반대지만, 범위가 좁음
         // Texture 1이 힘이 빠질 때(골짜기일 때)만 잠깐 등장
         // 파동을 뒤집고(-rawSine), 기준선을 낮춤(-0.2) -> 잠깐만 0.0 위로 올라옴
         let biasedSine = -rawSine - 0.2; 
