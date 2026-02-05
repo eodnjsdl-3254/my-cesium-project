@@ -245,9 +245,9 @@ export class GreeneryManager {
                 uri: config.url,
                 scale: config.scale, // 12.0 적용됨
                 heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                minimumPixelSize: 64, // 멀리서도 보이게
+                //minimumPixelSize: 64, 
                 shadows: Cesium.ShadowMode.ENABLED,
-                maximumScale: 50.0
+                //maximumScale: 50.0
             }
         });
         
