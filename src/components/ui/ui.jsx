@@ -23,7 +23,9 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
   // [녹지 시뮬레이션 상태]
   const [showGreeneryPanel, setShowGreeneryPanel] = useState(false);
   const [isUiDrawing, setIsUiDrawing] = useState(false); 
-  const [treeCount, setTreeCount] = useState(100);
+  const [treeSpecs, setTreeSpecs] = useState(null);
+
+  const [greeneryArea, setGreeneryArea] = useState(0);
 
   // =================================================================
   // 2. 효과 (Effect)
@@ -80,9 +82,16 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
   // [녹지] 그리기 시작
   const handleStartDraw = () => {
     if (!map) return;
+    
+    setGreeneryArea(0);
+    setTreeSpecs(null); // 초기화
     setIsUiDrawing(true);
-    map.startGreenerySimulation(() => {
-        console.log("✅ 그리기 완료");
+    
+    // 콜백에서 (area, specs) 두 가지를 받음
+    map.startGreenerySimulation((area, specs) => {
+        console.log("✅ UI: 면적 및 스펙 수신:", area, specs);
+        setGreeneryArea(area);
+        setTreeSpecs(specs); // 스펙 저장
         setIsUiDrawing(false); 
     });
   };
@@ -98,20 +107,30 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
             setShowSimulation(false);
             setEditTarget(null);
             setSelectedBuilding(null);
+            
+            // 🚨 [핵심 수정] 패널 열자마자 분석 데이터 구독 (Listening)
+            // 이미 분석이 끝났다면 즉시 받아오고, 아직 분석 중이라면 끝나자마자 받아옴
+            map.setGreenerySpecListener((specs) => {
+                console.log("✅ UI: 모델 분석 정보 수신:", specs);
+                setTreeSpecs(specs); 
+            });
+
             handleStartDraw();
         } else {
             setIsUiDrawing(false);
+            setGreeneryArea(0);
             map.stopGreenerySimulation(); 
         }
     }
   };
 
-  const handlePlantTrees = (count) => {
+  const handlePlantTrees = (count, ratio) => {
     if (isUiDrawing) {
         alert("영역 그리기를 먼저 완료해주세요 (지도 더블클릭).");
         return;
     }
-    if (map) map.plantTrees(count);
+    // GreeneryManager의 plantTrees(count, ratio) 호출
+    if (map) map.plantTrees(count, ratio);
   };
 
   // [건물] 패널 닫기
@@ -291,9 +310,8 @@ export const UI = ({ map, clickedCoord, selectedBuilding, setSelectedBuilding, o
             onStartDraw={handleStartDraw} 
             onPlant={handlePlantTrees}    
             onReset={handleStartDraw}     
-            treeCount={treeCount} 
-            setTreeCount={setTreeCount} 
-            carbonAbsorption={(treeCount * 8.2).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            area={greeneryArea}      
+            treeSpecs={treeSpecs}      
           />
           {isUiDrawing && (
             <div style={bannerStyle}>

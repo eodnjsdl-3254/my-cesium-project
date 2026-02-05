@@ -4,9 +4,11 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
   // -----------------------------------------------------------
   // 1. 상태 관리
   // -----------------------------------------------------------
-  // 초기 상태를 null로 설정하여, 아무 버튼도 안 눌렀을 때는 빈 화면 유지
   const [mode, setMode] = useState(null); // CREATE, UPLOAD, CONVERT, EDIT, LIBRARY, null
-
+  
+  const [sceneList, setSceneList] = useState([]); // 불러오기 목록
+  const [showLoadModal, setShowLoadModal] = useState(false); // 로드 모달 표시 여부
+  
   const [isPlacing, setIsPlacing] = useState(false);
   const [isRelocating, setIsRelocating] = useState(false);
   
@@ -19,7 +21,7 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
   const [library, setLibrary] = useState([]); // DB 모델 리스트
   const [selectedLibModel, setSelectedLibModel] = useState(null);
 
-  // 입력값 상태 (편집 및 생성 공용)
+  // 입력값 상태
   const [inputs, setInputs] = useState({
     width: 20, depth: 20, height: 50, // 박스용
     scale: 1.0,                       // 모델용
@@ -29,7 +31,7 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
   });
 
   // -----------------------------------------------------------
-  // 2. 선택된 건물 감지 (Data Binding -> EDIT 모드 진입)
+  // 2. 선택된 건물 감지 (EDIT 모드 진입)
   // -----------------------------------------------------------
   useEffect(() => {
     if (selectedBuilding && selectedBuilding.id) {
@@ -50,25 +52,21 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
       });
       setIsRelocating(false);
     } else {
-      // 선택 해제되면 초기 화면(빈 화면)으로 복귀
       setMode(null); 
     }
   }, [selectedBuilding]);
 
   // -----------------------------------------------------------
-  // 3. 라이브러리 목록 로드 (Nginx Proxy API 사용)
+  // 3. 라이브러리 목록 로드
   // -----------------------------------------------------------
   useEffect(() => {
-    // http://localhost/api/models -> Nginx -> FastAPI
     fetch('http://localhost/api/models') 
       .then(res => {
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           return res.json();
       })
       .then(data => {
-          // [중요] 데이터가 배열인지 확인 (404 에러 시 객체가 올 수 있음)
           if (Array.isArray(data)) {
-              // 썸네일 경로 보정: /public -> /files (Nginx Alias)
               const formattedData = data.map(item => ({
                   ...item,
                   fullThumbUrl: item.thumb_save_url 
@@ -77,29 +75,24 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
               }));
               setLibrary(formattedData);
           } else {
-              console.warn("⚠️ API 응답이 배열이 아닙니다:", data);
-              setLibrary([]); // 빈 배열로 초기화하여 map 에러 방지
+              setLibrary([]); 
           }
       })
       .catch(err => {
           console.error("❌ 라이브러리 로드 실패:", err);
-          setLibrary([]); // 에러 발생 시에도 빈 배열 유지
+          setLibrary([]); 
       });
   }, []);
 
   // -----------------------------------------------------------
   // 4. 핸들러 함수들
   // -----------------------------------------------------------
-
-  // [Library] 모델 선택 핸들러
   const handleSelectLibraryModel = (model) => {
     setSelectedLibModel(model);
     setIsPlacing(true);
-    // Map3D 클래스에 대기 모델 주입
     if (map) map.pendingLibraryModel = model;
   };
 
-  // [Edit] 입력값 변경 핸들러
   const handleInputChange = (key, value) => {
     const newInputs = { ...inputs, [key]: value };
     setInputs(newInputs);
@@ -112,20 +105,17 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
     }
   };
 
-  // [Edit] 스케일 슬라이더 핸들러
   const handleScaleChange = (e) => {
     const newScale = parseFloat(e.target.value);
     handleInputChange('scale', newScale);
   };
 
-  // [Box] 박스 배치 시작
   const handleStartPlacement = () => {
     if (!map) return;
     setIsPlacing(true);
     map.startBuildingPlacement(inputs.width, inputs.depth, inputs.height, inputs.rotation);
   };
 
-  // [GLB Upload] 로컬 파일 선택
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf'))) {
@@ -136,7 +126,6 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
     }
   };
 
-  // [GLB Upload] 배치 시작
   const handleStartModelPlacement = () => {
     if (!map || !uploadFile) {
         alert("파일을 먼저 선택해주세요.");
@@ -146,40 +135,34 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
     map.startModelPlacement(uploadFile);
   };
 
-  // [Convert] 변환 파일 선택
   const handleConvertFileSelect = (e) => {
     setConvertFiles(Array.from(e.target.files));
     setConvertedResult(null); 
   };
 
-  // [Convert] 변환 요청 (미사용 변수 isConverting 활용)
   const requestConversion = async () => {
     if (convertFiles.length === 0) { alert("파일을 선택하세요."); return; }
     const formData = new FormData();
     convertFiles.forEach(file => formData.append('files', file));
 
-    setIsConverting(true); // 로딩 시작
+    setIsConverting(true); 
     try {
-      // Nginx Proxy 경로 사용
       const res = await fetch('http://localhost/api/convert', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.url) {
-          // 결과 URL도 localhost 기준 보정 필요할 수 있음
           setConvertedResult(data);
       }
       else alert("변환 실패: " + (data.error || "오류"));
     } catch (e) {
       alert("서버 연결 실패");
     } finally {
-      setIsConverting(false); // 로딩 끝
+      setIsConverting(false); 
     }
   };
 
-  // [Convert] 변환된 모델 배치
   const handlePlaceConvertedModel = () => {
     if (!map || !convertedResult) return;
     
-    // 변환된 파일을 다시 Fetch로 가져와서 Blob으로 만듦
     setIsConverting(true);
     fetch(convertedResult.url)
       .then(res => res.blob())
@@ -196,14 +179,12 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
       });
   };
 
-  // [Edit] 재배치
   const handleRelocate = () => {
     if (!map || !selectedBuilding) return;
     setIsRelocating(true);
     map.startRelocation(selectedBuilding.id);
   };
 
-  // [Edit] 삭제
   const handleDelete = () => {
     if (!map || !selectedBuilding) return;
     if (window.confirm("정말로 삭제하시겠습니까?")) {
@@ -212,8 +193,76 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
     }
   };
 
+  // [시나리오 저장 핸들러]
+  const handleSaveScenario = async () => {
+    if (!map) return;
+    const name = prompt("저장할 시나리오 이름을 입력하세요:", "My Scene 1");
+    if (!name) return;
+
+    const geoJson = map.exportToGeoJSON(name);
+
+    try {
+      const res = await fetch("http://localhost/api/scenes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+           scene_name: name,
+           user_id: "demo_user",
+           scene_data: geoJson
+        })
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        alert("저장되었습니다!");
+      } else {
+        alert("저장 실패: " + JSON.stringify(data));
+      }
+    } catch (e) {
+      alert("서버 연결 오류");
+    }
+  };
+
+  // [시나리오 목록 불러오기]
+  const fetchSceneList = () => {
+      fetch("http://localhost/api/scenes")
+        .then(res => res.json())
+        .then(data => {
+            setSceneList(data);
+            setShowLoadModal(true); 
+        });
+  };
+
+  // [특정 시나리오 적용]
+  const loadScene = async (sceneId) => {
+      if (!window.confirm("현재 작업 내용이 사라집니다. 불러오시겠습니까?")) return;
+      
+      try {
+          const res = await fetch(`http://localhost/api/scenes/${sceneId}`);
+          const data = await res.json();
+          
+          if (data.scene_data) {
+              let targetData = data.scene_data;
+              
+              // 만약 안에 또 scene_data가 있고, 그 안에 features가 있다면? 한 꺼풀 벗김
+              if (targetData.scene_data && targetData.scene_data.features) {
+                  console.log("⚠️ 중첩된 데이터 구조 감지됨 (Unwrapping...)");
+                  targetData = targetData.scene_data;
+              }
+
+              // 이제 올바른 데이터를 map.js로 전달
+              map.importGeoJSON(targetData); 
+              
+              alert(`[${data.scene_name}] 로드 완료`);
+              setShowLoadModal(false);
+          }
+      } catch (e) {
+          console.error(e);
+          alert("로드 실패");
+      }
+  };
+
   // -----------------------------------------------------------
-  // 5. UI 렌더링
+  // 5. UI 렌더링 (return)
   // -----------------------------------------------------------
   return (
     <div style={styles.panel}>
@@ -225,10 +274,9 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
         <button onClick={onClose} style={styles.closeBtn}>✖</button>
       </div>
 
-      {/* 탭 버튼 (EDIT 모드가 아닐 때만 표시) */}
+      {/* 탭 버튼 */}
       {mode !== 'EDIT' && (
         <div style={{display: 'flex', gap: '5px', marginBottom: '15px', flexWrap: 'wrap'}}>
-          {/* 버튼 클릭 시 해당 모드로 전환, 이미 선택된 상태면 null(닫기) */}
           <button onClick={() => setMode(mode === 'CREATE' ? null : 'CREATE')} style={{...styles.tabBtn, background: mode==='CREATE'?'#2196F3':'#444'}}>📦 Box</button>
           <button onClick={() => setMode(mode === 'LIBRARY' ? null : 'LIBRARY')} style={{...styles.tabBtn, background: mode==='LIBRARY'?'#2196F3':'#444'}}>🏛️ Lib</button>
           <button onClick={() => setMode(mode === 'UPLOAD' ? null : 'UPLOAD')} style={{...styles.tabBtn, background: mode==='UPLOAD'?'#2196F3':'#444'}}>📂 GLB</button>
@@ -236,14 +284,13 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
         </div>
       )}
 
-      {/* 초기 안내 (아무 모드도 선택 안 했을 때) */}
       {!mode && (
           <div style={{textAlign:'center', color:'#888', padding:'20px', fontSize:'13px', border:'1px dashed #555', borderRadius:'4px'}}>
               👆 상단 버튼을 눌러 기능을 선택하세요.
           </div>
       )}
 
-      {/* ──────────────── [모드 1] 박스 생성 ──────────────── */}
+      {/* [모드 1] 박스 생성 */}
       {mode === 'CREATE' && (
         <>
           <div style={styles.grid2}>
@@ -259,10 +306,9 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
         </>
       )}
 
-      {/* ──────────────── [모드 2] 라이브러리 ──────────────── */}
+      {/* [모드 2] 라이브러리 */}
       {mode === 'LIBRARY' && (
         <div style={styles.libraryContainer}>
-            {/* 로딩/데이터 없음 처리 */}
             {library.length === 0 && <div style={{textAlign:'center', padding:'20px', color:'#aaa'}}>데이터를 불러오는 중이거나 없습니다.</div>}
             
             <div style={styles.libraryGrid}>
@@ -293,7 +339,7 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
         </div>
       )}
 
-      {/* ──────────────── [모드 3] GLB 업로드 ──────────────── */}
+      {/* [모드 3] GLB 업로드 */}
       {mode === 'UPLOAD' && (
          <div style={{marginTop:'10px'}}>
             <input type="file" accept=".glb,.gltf" onChange={handleFileSelect} style={{width:'100%', color:'#ddd', marginBottom:'10px', fontSize:'12px'}} />
@@ -305,7 +351,7 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
          </div>
       )}
 
-      {/* ──────────────── [모드 4] 3DS 변환 ──────────────── */}
+      {/* [모드 4] 3DS 변환 */}
       {mode === 'CONVERT' && (
          <div style={{marginTop:'10px'}}>
             <div style={{marginBottom:'10px', fontSize:'11px', color:'#aaa'}}>* 3ds 파일과 텍스처(jpg/png)를 함께 선택하세요.</div>
@@ -328,7 +374,7 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
          </div>
       )}
 
-      {/* ──────────────── [모드 5] 편집 (핵심 수정 부분) ──────────────── */}
+      {/* [모드 5] 편집 */}
       {mode === 'EDIT' && selectedBuilding && (
         <>
           <div style={styles.editSection}>
@@ -336,21 +382,9 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
                <>
                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}>
                    <label style={styles.labelBold}>📐 크기 비율 (Scale)</label>
-                   
-                   {/* [추가] 직접 숫자 입력 가능하도록 변경 */}
-                   <input 
-                      type="number" 
-                      step="0.1" 
-                      value={inputs.scale} 
-                      onChange={handleScaleChange} 
-                      style={{width:'60px', padding:'2px', background:'#222', border:'1px solid #555', color:'white', textAlign:'right'}} 
-                   />
+                   <input type="number" step="0.1" value={inputs.scale} onChange={handleScaleChange} style={{width:'60px', padding:'2px', background:'#222', border:'1px solid #555', color:'white', textAlign:'right'}} />
                  </div>
-                 
-                 {/* [수정] 최대값(max)을 5.0 -> 200으로 변경 (필요시 더 늘려도 됨) */}
-                 <input type="range" min="0.1" max="200.0" step="0.1" 
-                        value={inputs.scale} onChange={handleScaleChange} 
-                        style={{width:'100%', cursor:'pointer', marginBottom:'10px'}} />
+                 <input type="range" min="0.1" max="200.0" step="0.1" value={inputs.scale} onChange={handleScaleChange} style={{width:'100%', cursor:'pointer', marginBottom:'10px'}} />
                  
                  <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '5px', textAlign:'center'}}>
                     <div style={styles.statBox}><span style={styles.statLabel}>가로</span><div style={styles.statValue}>{(inputs.originalWidth * inputs.scale).toFixed(1)}m</div></div>
@@ -411,15 +445,48 @@ const SimulationPanel = ({ map, onClose, selectedBuilding, onUpdate }) => {
         </>
       )}
 
-      {/* [시나리오 저장 버튼] - 편집 모드가 아닐 때, 모드가 선택되어 있을 때만 표시 */}
+      {/* ✅ [추가됨] 시나리오 저장/로드 버튼 그룹 */}
       {mode !== 'EDIT' && mode !== null && (
-        <button 
-            onClick={() => map.exportToGeoJSON("New_Scenario")}
-            style={{...styles.mainBtn, background: '#4CAF50', marginTop: '15px', border:'1px solid #2e7d32'}}
-        >
-            💾 시나리오 저장 (GeoJSON)
-        </button>
+        <div style={{marginTop: '15px', display:'flex', gap:'5px'}}>
+            <button 
+                onClick={handleSaveScenario}
+                style={{...styles.mainBtn, background: '#4CAF50', border:'1px solid #2e7d32', flex:1}}
+            >
+                💾 저장
+            </button>
+            <button 
+                onClick={fetchSceneList}
+                style={{...styles.mainBtn, background: '#FF9800', border:'1px solid #F57C00', flex:1}}
+            >
+                📂 불러오기
+            </button>
+        </div>
       )}
+
+      {/* ✅ [추가됨] 로드 모달 (목록 표시) */}
+      {showLoadModal && (
+           <div style={styles.modal}>
+               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #555', paddingBottom:'5px', marginBottom:'5px'}}>
+                   <h4 style={{margin:0, color:'white'}}>📂 시나리오 목록</h4>
+                   <button onClick={()=>setShowLoadModal(false)} style={{background:'none', border:'none', color:'#aaa', cursor:'pointer'}}>✖</button>
+               </div>
+               
+               <ul style={{listStyle:'none', padding:0, margin:0, maxHeight:'200px', overflowY:'auto'}}>
+                   {sceneList.length === 0 && <li style={{color:'#888', textAlign:'center', padding:'10px'}}>저장된 시나리오가 없습니다.</li>}
+                   {sceneList.map(scene => (
+                       <li key={scene.scene_id} style={{borderBottom:'1px solid #444', padding:'8px 0', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                           <div style={{overflow:'hidden', marginRight:'5px'}}>
+                               <div style={{color:'white', fontSize:'13px', fontWeight:'bold', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{scene.scene_name}</div>
+                               <div style={{color:'#888', fontSize:'10px'}}>{scene.reg_date?.substring(0,10)}</div>
+                           </div>
+                           <button onClick={()=>loadScene(scene.scene_id)} style={{background:'#2196F3', border:'none', color:'white', borderRadius:'4px', cursor:'pointer', padding:'4px 8px', fontSize:'11px'}}>
+                               Load
+                           </button>
+                       </li>
+                   ))}
+               </ul>
+           </div>
+       )}
     </div>
   );
 };
@@ -435,6 +502,7 @@ const styles = {
     boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', 
     border: '1px solid rgba(255,255,255,0.1)' 
   },
+  // ... (기존 스타일 유지) ...
   closeBtn: { background:'transparent', border:'none', color:'#aaa', cursor:'pointer', fontSize:'16px' },
   tabBtn: { flex: 1, padding: '8px', border:'none', color:'white', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold', transition: '0.2s' },
   mainBtn: { width: '100%', padding: '12px', border: 'none', color: 'white', fontWeight: 'bold', borderRadius: '4px', cursor:'pointer', fontSize:'13px', transition: 'background 0.2s' },
@@ -457,7 +525,15 @@ const styles = {
   editSection: { marginBottom:'15px', padding:'10px', background:'rgba(255,255,255,0.05)', borderRadius:'6px', border:'1px solid #444' },
   metaContainer: { marginTop: '15px', borderRadius: '6px', border: '1px solid #444', background: 'rgba(0,0,0,0.2)', overflow: 'hidden' },
   metaHeader: { padding: '8px', background: 'rgba(255,255,255,0.05)', fontSize: '12px', color: '#4CAF50', fontWeight: 'bold', borderBottom: '1px solid #444' },
-  metaBody: { padding: '8px', maxHeight: '150px', overflowY: 'auto' }
+  metaBody: { padding: '8px', maxHeight: '150px', overflowY: 'auto' },
+  
+  // ✅ [추가됨] 모달 스타일
+  modal: {
+      position:'absolute', top:'100%', right:0, width:'100%', 
+      background:'rgba(35, 35, 40, 0.98)', border:'1px solid #666', 
+      padding:'10px', borderRadius:'8px', zIndex:6000,
+      marginTop: '5px', boxSizing: 'border-box', boxShadow: '0 4px 15px rgba(0,0,0,0.8)'
+  }
 };
 
 export default SimulationPanel;

@@ -36,7 +36,7 @@ export const extractGlbFullDetails = (file) => {
         const buffer = e.target.result;
         const dataView = new DataView(buffer);
 
-        // 1. 매직 넘버 체크 (GLTF 포맷 확인)
+        // 1. 매직 넘버 체크 (GLTF 포맷 확인: 'glTF')
         if (dataView.getUint32(0, true) !== 0x46546c67) {
           console.warn("❌ 유효한 GLB 파일이 아닙니다.");
           resolve(getDefaultData(file.name, "Invalid Magic Number"));
@@ -44,7 +44,18 @@ export const extractGlbFullDetails = (file) => {
         }
 
         // 2. JSON 청크 추출 및 파싱
+        // GLB Header(12bytes) = Magic(4) + Version(4) + Length(4)
+        // Chunk 0 Header(8bytes) = Length(4) + Type(4)
         const chunkLength = dataView.getUint32(12, true);
+        const chunkType = dataView.getUint32(16, true);
+
+        // JSON Chunk Type must be 0x4E4F534A ('JSON')
+        if (chunkType !== 0x4E4F534A) {
+             console.warn("❌ JSON 청크를 찾을 수 없습니다.");
+             resolve(getDefaultData(file.name, "No JSON Chunk"));
+             return;
+        }
+
         const jsonChunk = new Uint8Array(buffer, 20, chunkLength);
         const decoder = new TextDecoder("utf-8");
         const jsonString = decoder.decode(jsonChunk);
@@ -65,7 +76,7 @@ export const extractGlbFullDetails = (file) => {
             scale: [1, 1, 1],
             rotation: [0, 0, 0, 1],
             position: [0, 0, 0],
-            rootNodeName: "Node_0" // 나중에 덮어씌움
+            rootNodeName: "Node_0"
           }
         };
 

@@ -30,6 +30,7 @@ export class Map3D {
   constructor(viewer, onMapClick, onBuildingClick, onSimulationSelect) {
     if (!viewer) throw new Error("Viewer 인스턴스가 없습니다.");
     this.viewer = viewer;
+    this.buildingEntities = [];
 
     // UI 콜백
     this.onMapClick = onMapClick;
@@ -716,6 +717,230 @@ export class Map3D {
     this.viewer.scene.requestRender();
   }
 
+  /**
+   * [Export] 현재 배치된 건물들을 GeoJSON으로 변환
+   */
+  exportToGeoJSON(sceneName) {
+      // 1. 시뮬레이션 객체 필터링
+      const simulationEntities = this.viewer.entities.values.filter(
+          e => e.properties && e.properties.isSimulation?.getValue()
+      );
+
+      // 2. Feature 배열 생성
+      const features = simulationEntities.map(e => {
+          const p = e.properties;
+          const pos = Cesium.Cartographic.fromCartesian(e.position.getValue(Cesium.JulianDate.now()));
+          
+          return {
+              type: "Feature",
+              geometry: {
+                  type: "Point",
+                  coordinates: [
+                      Cesium.Math.toDegrees(pos.longitude),
+                      Cesium.Math.toDegrees(pos.latitude),
+                      pos.height
+                  ]
+              },
+              properties: {
+                  // [중요] 복원을 위한 타입 구분 (MODEL vs BOX)
+                  type: (p.isModel?.getValue() || p.mlid?.getValue()) ? "MODEL" : "BOX",
+                  
+                  // 기본 식별 정보
+                  mlid: p.mlid?.getValue(),
+                  modelUrl: p.modelUrl?.getValue(), // URL 모델인 경우 필요
+                  
+                  // 변환 정보
+                  scale: p.scale?.getValue(),
+                  rotation: p.rotation?.getValue(),
+                  
+                  // 현재 크기
+                  width: p.width?.getValue(),
+                  depth: p.depth?.getValue(),
+                  height: p.height?.getValue(),
+                  
+                  // [추가] 모델 스케일 정밀 복원을 위한 원본 데이터 (없으면 저장 안됨)
+                  originalWidth: p.originalWidth?.getValue(),
+                  originalDepth: p.originalDepth?.getValue(),
+                  originalHeight: p.originalHeight?.getValue(),
+                  rootNodeName: p.rootNodeName?.getValue(),
+                  baseCorrection: p.baseCorrection?.getValue()
+              }
+          };
+      });
+
+      // 기존에는 여기서 { scene_data: ... } 로 감싸서 리턴했지만,
+      // 이제는 순수한 GeoJSON(FeatureCollection) 객체만 리턴합니다.
+      
+      const geoJson = {
+          type: "FeatureCollection",
+          name: sceneName,
+          features: features
+      };
+
+      return geoJson;
+  }
+
+  /**
+   * [Import] GeoJSON 데이터를 받아 맵에 다시 배치
+   */
+  async importGeoJSON(geoJsonData) {
+    if (!geoJsonData || !geoJsonData.features) {
+        console.warn("⚠️ importGeoJSON: 유효하지 않은 데이터", geoJsonData);
+        return;
+    }
+
+    console.log(`🔄 GeoJSON 로드 시작: ${geoJsonData.features.length}개 객체`);
+
+    // 1. 기존 건물 초기화
+    this.removeAllBuildings(); 
+    
+    // 2. [비상용] 모델 리스트 미리 가져오기 (URL 누락 대비용)
+    let modelLibrary = [];
+    try {
+        const res = await fetch('http://localhost/api/models');
+        if (res.ok) {
+            modelLibrary = await res.json();
+            console.log("📚 모델 라이브러리 로드 완료 (복구용):", modelLibrary.length + "개");
+        }
+    } catch (e) {
+        console.warn("라이브러리 조회 실패 (네트워크 오류)");
+    }
+
+    // 3. 피처 순회하며 재생성
+    for (const feature of geoJsonData.features) {
+      const [lon, lat] = feature.geometry.coordinates;
+      const p = feature.properties;
+
+      // 모델인지 판단 (타입이 MODEL이거나 mlid가 있는 경우)
+      const isModel = (p.type === "MODEL") || (p.mlid !== undefined && p.mlid !== null);
+
+      if (isModel) {
+        let modelUrl = p.modelUrl;
+
+        // 🚨 [복구 로직] URL이 없다면, 미리 가져온 라이브러리에서 mlid로 검색
+        if (!modelUrl && p.mlid) {
+            const found = modelLibrary.find(m => m.mlid === p.mlid);
+            if (found) {
+                // Nginx 경로 조합 (/files + DB경로)
+                modelUrl = `http://localhost/files${found.model_save_file_url}`;
+                console.log(`🔧 [자동복구] 모델 URL 연결 성공: ${found.model_org_file_name}`);
+            }
+        }
+
+        if (modelUrl) {
+            // [A] URL이 확보되었으므로 3D 모델 생성
+            await this.createModelEntityByUrl({
+                url: modelUrl,
+                lon: lon, 
+                lat: lat,
+                rotation: p.rotation || 0,
+                scale: p.scale || 1.0,
+                height: p.height, 
+                metadata: p
+            });
+        } else {
+            // [B] 끝까지 URL을 못 찾은 경우에만 박스 생성
+            console.warn(`⚠️ 모델 파일 소실 (mlid: ${p.mlid}). 박스로 대체합니다.`);
+            await this.createBoxEntity({
+                lon: lon, 
+                lat: lat,
+                width: p.width, 
+                depth: p.depth, 
+                height: p.height,
+                rotation: p.rotation,
+                metadata: p
+            });
+        }
+
+      } else {
+        // [C] 원래 박스였던 객체
+        await this.createBoxEntity({
+            lon: lon, 
+            lat: lat,
+            width: p.width, 
+            depth: p.depth, 
+            height: p.height,
+            rotation: p.rotation,
+            metadata: p
+        });
+      }
+    }
+
+    console.log(`✅ 시나리오 복원 완료`);
+  }
+  
+  // ------------------------------------------------------------------
+  // [Helper 1] URL로 모델 생성 (보정값 적용 버전)
+  // ------------------------------------------------------------------
+  async createModelEntityByUrl({ url, lon, lat, rotation, scale, metadata }) {
+     const position = Cesium.Cartesian3.fromDegrees(lon, lat, 0); 
+     
+     const heading = Cesium.Math.toRadians(rotation || 0);
+     const hpr = new Cesium.HeadingPitchRoll(heading, 0, 0);
+     const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+
+     // 🚨 [핵심 수정] 저장된 보정값(baseCorrection)이 있으면 쓰고, 없으면 10배 적용
+     // (이전 로직에서 cm 단위 문제로 10배 키웠던 것을 복원)
+     const savedCorrection = (metadata && metadata.baseCorrection) ? parseFloat(metadata.baseCorrection) : 10.0;
+     
+     // 최종 스케일 = (사용자가 조절한 크기) * (모델 단위 보정값)
+     const finalScale = (scale || 1.0) * savedCorrection;
+
+     console.log(`🔧 [복원] 모델 스케일 적용: 사용자(${scale}) * 보정(${savedCorrection}) = ${finalScale}`);
+
+     const entity = this.viewer.entities.add({
+         name: "SIMULATION_BUILDING",
+         position: position,
+         orientation: orientation,
+         model: {
+             uri: url, 
+             scale: finalScale, // 👈 여기에 계산된 값을 넣어야 원래 크기로 나옵니다.
+             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+         },
+         properties: {
+             isSimulation: true,
+             isModel: true,
+             ...metadata, // 원본 메타데이터 유지
+             
+             // 중요: 복원된 엔티티에도 보정값을 다시 저장해둬야, 나중에 편집할 때도 유지됨
+             baseCorrection: savedCorrection 
+         }
+     });
+     
+     if (typeof ensureRender === 'function') {
+         await ensureRender(this.viewer.scene, 5);
+     }
+     
+     return entity;
+  }
+
+  // ------------------------------------------------------------------
+  // [Helper 2] 박스 생성 (importGeoJSON에서 호출)
+  // ------------------------------------------------------------------
+  async createBoxEntity({ lon, lat, width, depth, height, rotation, metadata }) {
+      // 기존 createProceduralBuilding 함수를 재사용합니다.
+      // (기존 map.js에 createProceduralBuilding 메서드가 있다면 그걸 호출)
+      const entity = await this.createProceduralBuilding(
+          lat, lon, width, depth, height, rotation
+      );
+      
+      // 메타데이터(mlid 등)가 있으면 덮어씌워줍니다.
+      if (entity && metadata) {
+          // 기존 properties에 metadata 병합
+          const newProps = { ...metadata, isSimulation: true, isModel: false };
+          for (const key in newProps) {
+              entity.properties[key] = newProps[key];
+          }
+      }
+      return entity;
+  }
+
+  // (참고용) 초기화
+  removeAllBuildings() {
+      this.buildingEntities.forEach(e => this.viewer.entities.remove(e));
+      this.buildingEntities = [];
+  }
+
   // ---------------------------------------------------------------
   // 🛠️ 엔티티 선택 및 UI 이벤트 발생 (데이터 전달)
   // ---------------------------------------------------------------
@@ -928,8 +1153,10 @@ export class Map3D {
     console.log("🌿 녹지 시뮬레이션 시작");
   }
 
-  plantTrees(count) {
-    this.greenery.plantTrees(count);
+  plantTrees(count, ratio) {
+    if (this.greenery) {
+        this.greenery.plantTrees(count, ratio);
+    }
   }
 
   stopGreenerySimulation() {
@@ -980,5 +1207,12 @@ export class Map3D {
       a.click();
 
       return scenario;
+  }
+
+  // 녹지 매니저의 분석 업데이트를 UI에 연결
+  setGreenerySpecListener(callback) {
+    if (this.greenery) {
+        this.greenery.setOnAnalysisUpdate(callback);
+    }
   }
 }
